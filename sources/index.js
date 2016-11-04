@@ -7,6 +7,8 @@ import parser from 'tap-parser';
 import prettyMs from 'pretty-ms';
 import jsondiffpatch from 'jsondiffpatch';
 
+var argv = require('minimist')(process.argv.slice(2));
+
 const INDENT = '  ';
 const FIG_TICK = figures.tick;
 const FIG_CROSS = figures.cross;
@@ -16,6 +18,8 @@ const createReporter = () => {
   const p = parser();
   const stream = duplexer(p, output);
   const startedAt = Date.now();
+  let lastTestName = '';
+  let failedTests = [];
 
   const println = (input = '', indentLevel = 0) => {
     let indent = '';
@@ -31,93 +35,45 @@ const createReporter = () => {
   };
 
   const handleTest = name => {
-    println();
+    if (!argv.quiet) {
+      println();
+    }
+
     println(chalk.blue(name), 1);
   };
 
   const handleAssertSuccess = assert => {
-    const name = assert.name;
+    if (argv.quiet) {
+      return;
+    }
 
+    const name = assert.name;
     println(`${chalk.green(FIG_TICK)}  ${chalk.dim(name)}`, 2)
   };
 
-  const toString = (arg) => Object.prototype.toString.call(arg).slice(8, -1).toLowerCase()
+  const printTestFailure = failure => {
+    const {
+      actual,
+      at,
+      expected,
+      operator,
+    } = failure;
 
-  const JSONize = (str) => {
-    return str
-      // wrap keys without quote with valid double quote
-      .replace(/([\$\w]+)\s*:/g, (_, $1) => '"'+$1+'":')
-      // replacing single quote wrapped ones to double quote
-      .replace(/'([^']+)'/g, (_, $1) => '"' + $1 + '"')
-  }
+    println(`${chalk.red('not ok')}`, 1);
+    println('---', 1);
+    println(`operator: ${operator}`, 2);
+    println(`expected: ${chalk.red(JSON.stringify(expected))}`, 2);
+    println(`actual: ${chalk.green(JSON.stringify(actual))}`, 2);
+    println(`at: ${chalk.magenta(at)}`, 2);
+    println('---', 1);
+    println();
+  };
 
   const handleAssertFailure = assert => {
-    const name = assert.name;
+    printTestFailure(assert.diag);
 
-    const writeDiff = ({ value, added, removed }) => {
-      let style = chalk.white;
-
-      if (added)   style = chalk.green.inverse;
-      if (removed) style = chalk.red.inverse;
-
-      // only highlight values and not spaces before
-      return value.replace(/(^\s*)(.*)/g, (m, one, two) => one + style(two))
-    };
-
-    let {
-      at,
-      actual,
-      expected
-    } = assert.diag
-
-    let expected_type = toString(expected)
-
-    if (expected_type !== 'array' ) {
-      try {
-        // the assert event only returns strings which is broken so this
-        // handles converting strings into objects
-        if (expected.indexOf('{') > -1) {
-          actual = JSON.stringify(JSON.parse(JSONize(actual)), null, 2)
-          expected = JSON.stringify(JSON.parse(JSONize(expected)), null, 2)
-        }
-      } catch (e) {
-        try {
-          actual = JSON.stringify(eval(`(${actual})`), null, 2)
-          expected = JSON.stringify(eval(`(${expected})`), null, 2)
-        } catch (e) {
-          // do nothing because it wasn't a valid json object
-        }
-      }
-
-      expected_type = toString(expected)
-    }
-
-    println(`${chalk.red(FIG_CROSS)}  ${chalk.red(name)} at ${chalk.magenta(at)}`, 2);
-
-    if (expected_type === 'object') {
-      const delta = jsondiffpatch.diff(actual[failed_test_number], expected[failed_test_number])
-      const output = jsondiffpatch.formatters.console.format(delta)
-      println(output, 4)
-
-    } else if (expected_type === 'array') {
-      const compared = diffJson(actual, expected)
-        .map(writeDiff)
-        .join('');
-
-      println(compared, 4);
-    } else if (expected === 'undefined' && actual === 'undefined') {
-      ;
-    } else if (expected_type === 'string') {
-      const compared = diffWords(actual, expected)
-        .map(writeDiff)
-        .join('');
-
-      println(compared, 4);
-    } else {
-      println(
-        chalk.red.inverse(actual) + chalk.green.inverse(expected),
-        4
-      );
+    if (argv.summary) {
+      failedTests.push([lastTestName, assert.diag]);
     }
   };
 
@@ -141,6 +97,16 @@ const createReporter = () => {
     }
 
     println();
+
+    if (!argv.summary) {
+      return;
+    }
+
+    failedTests.forEach(failure => {
+      const [testName, assertDiag] = failure;
+      println(chalk.red(`Test failed: ${testName}`));
+      printTestFailure(assertDiag);
+    });
   };
 
   p.on('comment', (comment) => {
@@ -151,6 +117,10 @@ const createReporter = () => {
     if (/^fail\s+[0-9]+$/.test(trimmed)) return;
     if (/^ok$/.test(trimmed)) return;
 
+    if (argv.summary) {
+      // Store the name of the test to better track test failures
+      lastTestName = trimmed;
+    }
     handleTest(trimmed);
   });
 
@@ -161,10 +131,6 @@ const createReporter = () => {
   });
 
   p.on('complete', handleComplete);
-
-  p.on('child', (child) => {
-    ;
-  });
 
   p.on('extra', extra => {
     println(chalk.yellow(`${extra}`.replace(/\n$/, '')), 4);

@@ -4,6 +4,8 @@ Object.defineProperty(exports, '__esModule', {
   value: true
 });
 
+var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }; })();
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
 
 var _diff = require('diff');
@@ -36,6 +38,8 @@ var _jsondiffpatch = require('jsondiffpatch');
 
 var _jsondiffpatch2 = _interopRequireDefault(_jsondiffpatch);
 
+var argv = require('minimist')(process.argv.slice(2));
+
 var INDENT = '  ';
 var FIG_TICK = _figures2['default'].tick;
 var FIG_CROSS = _figures2['default'].cross;
@@ -45,6 +49,8 @@ var createReporter = function createReporter() {
   var p = (0, _tapParser2['default'])();
   var stream = (0, _duplexer2['default'])(p, output);
   var startedAt = Date.now();
+  var lastTestName = '';
+  var failedTests = [];
 
   var println = function println() {
     var input = arguments.length <= 0 || arguments[0] === undefined ? '' : arguments[0];
@@ -63,97 +69,45 @@ var createReporter = function createReporter() {
   };
 
   var handleTest = function handleTest(name) {
-    println();
+    if (!argv.quiet) {
+      println();
+    }
+
     println(_chalk2['default'].blue(name), 1);
   };
 
   var handleAssertSuccess = function handleAssertSuccess(assert) {
-    var name = assert.name;
+    if (argv.quiet) {
+      return;
+    }
 
+    var name = assert.name;
     println(_chalk2['default'].green(FIG_TICK) + '  ' + _chalk2['default'].dim(name), 2);
   };
 
-  var toString = function toString(arg) {
-    return Object.prototype.toString.call(arg).slice(8, -1).toLowerCase();
-  };
+  var printTestFailure = function printTestFailure(failure) {
+    if (!argv.summary) {
+      return;
+    }
 
-  var JSONize = function JSONize(str) {
-    return str
-    // wrap keys without quote with valid double quote
-    .replace(/([\$\w]+)\s*:/g, function (_, $1) {
-      return '"' + $1 + '":';
-    })
-    // replacing single quote wrapped ones to double quote
-    .replace(/'([^']+)'/g, function (_, $1) {
-      return '"' + $1 + '"';
-    });
+    var actual = failure.actual;
+    var at = failure.at;
+    var expected = failure.expected;
+    var operator = failure.operator;
+
+    println('' + _chalk2['default'].red('not ok'), 1);
+    println('---', 1);
+    println('operator: ' + operator, 2);
+    println('expected: ' + _chalk2['default'].red(JSON.stringify(expected)), 2);
+    println('actual: ' + _chalk2['default'].green(JSON.stringify(actual)), 2);
+    println('at: ' + _chalk2['default'].magenta(at), 2);
+    println('---', 1);
+    println();
   };
 
   var handleAssertFailure = function handleAssertFailure(assert) {
-    var name = assert.name;
-
-    var writeDiff = function writeDiff(_ref) {
-      var value = _ref.value;
-      var added = _ref.added;
-      var removed = _ref.removed;
-
-      var style = _chalk2['default'].white;
-
-      if (added) style = _chalk2['default'].green.inverse;
-      if (removed) style = _chalk2['default'].red.inverse;
-
-      // only highlight values and not spaces before
-      return value.replace(/(^\s*)(.*)/g, function (m, one, two) {
-        return one + style(two);
-      });
-    };
-
-    var _assert$diag = assert.diag;
-    var at = _assert$diag.at;
-    var actual = _assert$diag.actual;
-    var expected = _assert$diag.expected;
-
-    var expected_type = toString(expected);
-
-    if (expected_type !== 'array') {
-      try {
-        // the assert event only returns strings which is broken so this
-        // handles converting strings into objects
-        if (expected.indexOf('{') > -1) {
-          actual = JSON.stringify(JSON.parse(JSONize(actual)), null, 2);
-          expected = JSON.stringify(JSON.parse(JSONize(expected)), null, 2);
-        }
-      } catch (e) {
-        try {
-          actual = JSON.stringify(eval('(' + actual + ')'), null, 2);
-          expected = JSON.stringify(eval('(' + expected + ')'), null, 2);
-        } catch (e) {
-          // do nothing because it wasn't a valid json object
-        }
-      }
-
-      expected_type = toString(expected);
-    }
-
-    println(_chalk2['default'].red(FIG_CROSS) + '  ' + _chalk2['default'].red(name) + ' at ' + _chalk2['default'].magenta(at), 2);
-
-    if (expected_type === 'object') {
-      var delta = _jsondiffpatch2['default'].diff(actual[failed_test_number], expected[failed_test_number]);
-      var _output = _jsondiffpatch2['default'].formatters.console.format(delta);
-      println(_output, 4);
-    } else if (expected_type === 'array') {
-      var compared = (0, _diff.diffJson)(actual, expected).map(writeDiff).join('');
-
-      println(compared, 4);
-    } else if (expected === 'undefined' && actual === 'undefined') {
-      ;
-    } else if (expected_type === 'string') {
-      var compared = (0, _diff.diffWords)(actual, expected).map(writeDiff).join('');
-
-      println(compared, 4);
-    } else {
-      println(_chalk2['default'].red.inverse(actual) + _chalk2['default'].green.inverse(expected), 4);
-    }
+    printTestFailure(assert.diag);
+    failedTests.push([lastTestName, assert.diag]);
   };
 
   var handleComplete = function handleComplete(result) {
@@ -171,6 +125,20 @@ var createReporter = function createReporter() {
     }
 
     println();
+
+    if (!argv.summary) {
+      return;
+    }
+
+    failedTests.forEach(function (failure) {
+      var _failure = _slicedToArray(failure, 2);
+
+      var testName = _failure[0];
+      var assertDiag = _failure[1];
+
+      println(_chalk2['default'].red('Test failed: ' + testName));
+      printTestFailure(assertDiag);
+    });
   };
 
   p.on('comment', function (comment) {
@@ -181,6 +149,7 @@ var createReporter = function createReporter() {
     if (/^fail\s+[0-9]+$/.test(trimmed)) return;
     if (/^ok$/.test(trimmed)) return;
 
+    lastTestName = trimmed;
     handleTest(trimmed);
   });
 
@@ -191,10 +160,6 @@ var createReporter = function createReporter() {
   });
 
   p.on('complete', handleComplete);
-
-  p.on('child', function (child) {
-    ;
-  });
 
   p.on('extra', function (extra) {
     println(_chalk2['default'].yellow(('' + extra).replace(/\n$/, '')), 4);
