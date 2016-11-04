@@ -1,5 +1,5 @@
 {
-  "name": "tap-diff",
+  "name": "tap-diff-summary",
   "version": "0.1.1",
   "description": "The most human-friendly TAP reporter",
   "main": "./distributions/index.js",
@@ -10,7 +10,7 @@
     "babel": "babel ./sources --out-dir ./distributions",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "axross <kou@axross.org> (http://axross.me/)",
+  "author": "Victor Shen",
   "license": "MIT",
   "dependencies": {
     "chalk": "^1.1.1",
@@ -28,12 +28,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/axross/tap-diff.git"
+    "url": "git+https://github.com/vshenanigans/tap-diff-summary.git"
   },
   "bugs": {
-    "url": "https://github.com/axross/tap-diff/issues"
+    "url": "https://github.com/vshenanigans/tap-diff-summary/issues"
   },
-  "homepage": "https://github.com/axross/tap-diff#readme",
+  "homepage": "https://github.com/vshenanigans/tap-diff-summary#readme",
   "keywords": [
     "tap",
     "tape",
